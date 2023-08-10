@@ -1,0 +1,447 @@
+#include <PubSubClient.h>
+#include <Arduino.h>
+#include "WiFi.h"
+#include "HTTPClient.h"
+#include "time.h"
+#include <ArduinoJson.h>
+#include <ThingSpeak.h>
+
+#define LED1 32
+#define LED2 33
+#define LED3 35
+
+#define threshold 50
+
+#define speed 0.034
+#define conv 0.01
+
+char *wifi_ssid = ":heisrightyouknow:";
+char *wifi_pwd = "yesHeIsRight";
+String cse_ip = "192.168.123.219"; // YOUR IP from ipconfig/ifconfig
+String cse_port = "8080";
+String server = "http://" + cse_ip + ":" + cse_port + "/~/in-cse/in-name/";
+
+const char *server_mqtt = "mqtt3.thingspeak.com";
+const char *mqttUserName = "IoT Project V2";
+const char *clientid = "MCIFBRUmDBwRES8lMAkAFy4";
+const char *username = "MCIFBRUmDBwRES8lMAkAFy4";
+const char *passwordqqq = "nozFUV5URLAjZcBisPJ3amm/";
+char mqttPass[] = "EXH40EH1B3EN2G85";
+long writeChannelID = 1784254;
+char *writeAPIKey = "LE5VX1Y3D1DO5DDB";
+
+String ae = "Lane-2";
+String cnt_LDR = "LDR";
+String cnt_PIR = "PIR";
+String cnt_Speed = "Speed";
+
+WiFiClient client;
+PubSubClient mqttClient(server_mqtt, 1883, client);
+
+const int ldrPin = 39;
+int ldrVal = 0;
+
+const int sensor_pin = 19;
+
+const int trigger = 18;
+const int echo = 5;
+
+float TIME1, TIME2, TIME3, TIME;
+
+float distance1;
+float distance2;
+float distance, distance3;
+
+float speed1, speed2, avg;
+
+void reconnect()
+{
+    while (!mqttClient.connected())
+    {
+        Serial.print("Attempting MQTT connection...");
+
+        if (mqttClient.connect(clientid, username, passwordqqq))
+        {
+            Serial.println("connected");
+        }
+
+        else
+        {
+            Serial.print("failed, rc=");
+            Serial.println(" try again in 5 seconds");
+            delay(5000);
+        }
+    }
+}
+
+void createCI_LDR(const String &val)
+{
+    HTTPClient http;
+    http.begin(server + ae + "/" + cnt_LDR + "/");
+
+    http.addHeader("X-M2M-Origin", "admin:admin");
+    http.addHeader("Content-Type", "application/json;ty=4");
+
+    int code = http.POST("{\"m2m:cin\": {\"cnf\":\"application/json\",\"con\": " + String(val) + "}}");
+//    Serial.println(code);/
+
+    if (code == -1)
+    {
+        Serial.println("UNABLE TO CONNECT TO THE SERVER");
+    }
+
+    http.end();
+}
+
+void createCI_PIR(const String &val)
+{
+    HTTPClient http;
+    http.begin(server + ae + "/" + cnt_PIR + "/");
+
+    http.addHeader("X-M2M-Origin", "admin:admin");
+    http.addHeader("Content-Type", "application/json;ty=4");
+
+    int code = http.POST("{\"m2m:cin\": {\"cnf\":\"application/json\",\"con\": " + String(val) + "}}");
+//    Serial.println(code);/
+
+    if (code == -1)
+    {
+        Serial.println("UNABLE TO CONNECT TO THE SERVER");
+    }
+
+    http.end();
+}
+
+void createCI_Speed(const String &val)
+{
+    HTTPClient http;
+    http.begin(server + ae + "/" + cnt_Speed + "/");
+
+    http.addHeader("X-M2M-Origin", "admin:admin");
+    http.addHeader("Content-Type", "application/json;ty=4");
+
+    int code = http.POST("{\"m2m:cin\": {\"cnf\":\"application/json\",\"con\": " + String(val) + "}}");
+//    Serial.println(code);/
+
+    if (code == -1)
+    {
+        Serial.println("UNABLE TO CONNECT TO THE SERVER");
+    }
+    http.end();
+}
+
+void lightOn()
+{
+    digitalWrite(32, HIGH);
+    digitalWrite(33, HIGH);
+    digitalWrite(35, HIGH);
+    
+    delay(500);
+}
+
+void lightOff()
+{
+    digitalWrite(32, LOW);
+    digitalWrite(33, LOW);
+    digitalWrite(35, LOW);
+    
+    delay(500);
+}
+
+void mqttPublish_LDR(long pubChannelID, char *pubWriteAPIKey, int value)
+{
+    String dataString = "field4=" + String(value);
+
+//    Serial.println(dataString);/
+    String topicString = "channels/" + String(pubChannelID) + "/publish";
+    mqttClient.publish(topicString.c_str(), dataString.c_str());
+//    Serial.println(pubChannelID);
+//    Serial.println("");
+}
+
+void mqttPublish_PIR(long pubChannelID, char *pubWriteAPIKey, int value)
+{
+    String dataString = "field5=" + String(value);
+
+//    Serial.println(dataString);/
+    String topicString = "channels/" + String(pubChannelID) + "/publish";
+    mqttClient.publish(topicString.c_str(), dataString.c_str());
+//    Serial.println(pubChannelID);
+//    Serial.println("");
+}
+
+void mqttPublish_Speed(long pubChannelID, char *pubWriteAPIKey, int value)
+{
+    String dataString = "field6=" + String(value);
+
+//    Serial.println(dataString);/
+    String topicString = "channels/" + String(pubChannelID) + "/publish";
+    mqttClient.publish(topicString.c_str(), dataString.c_str());
+//    Serial.println(pubChannelID);/
+//    Serial.println("");/
+}
+
+void setup()
+{
+    Serial.begin(115200);
+
+    pinMode(32, OUTPUT);
+    pinMode(33, OUTPUT);
+    pinMode(35, OUTPUT);
+
+    pinMode(ldrPin, INPUT);
+    pinMode(sensor_pin, INPUT);
+    pinMode(echo, INPUT);
+    pinMode(trigger, OUTPUT);
+
+    WiFi.mode(WIFI_STA);
+
+    WiFi.begin(wifi_ssid, wifi_pwd);
+    delay(3000);
+
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        WiFi.begin(wifi_ssid, wifi_pwd);
+        delay(3000);
+        Serial.println("Connecting...");
+    }
+    Serial.println("");
+    Serial.println("Successfully connected to WiFi.");
+    Serial.print("IP address is : ");
+    Serial.println(WiFi.localIP());
+
+    mqttClient.setServer(server_mqtt, 1883);
+}
+
+int flag = 0;
+
+void loop()
+{
+    if (!mqttClient.connected())
+    {
+        reconnect();
+    }
+    mqttClient.loop();
+
+    ldrVal = analogRead(ldrPin);
+
+    Serial.print("LDR value is: ");
+    Serial.println(ldrVal);
+
+    createCI_LDR(String(ldrVal));
+    mqttPublish_LDR(writeChannelID, writeAPIKey, ldrVal);
+
+    delay(3000);
+
+    if (ldrVal < 400)
+    {
+        
+
+        int state = digitalRead(sensor_pin);
+        Serial.print("Motion sensor value is: ");
+        Serial.println(state);
+
+        createCI_PIR(String(state));
+        mqttPublish_PIR(writeChannelID, writeAPIKey, state);
+
+        if (state == HIGH)
+        {
+            Serial.println("Turning on lights....");
+            delay(100);
+            lightOn();
+
+            digitalWrite(trigger, LOW);
+            delayMicroseconds(100);
+            digitalWrite(trigger, HIGH);
+            delayMicroseconds(10);
+            digitalWrite(trigger, LOW);
+            TIME1 = pulseIn(echo, HIGH);
+            distance1 = (speed * TIME1) / 2;
+            Serial.print("Distance1 in cm");
+            Serial.println(distance1);
+            delay(500);
+
+            digitalWrite(trigger, LOW);
+            delayMicroseconds(100);
+            digitalWrite(trigger, HIGH);
+            delayMicroseconds(10);
+            digitalWrite(trigger, LOW);
+            TIME2 = pulseIn(echo, HIGH);
+            distance2 = (speed * TIME2) / 2;
+            Serial.print("Distance2 in cm");
+            Serial.println(distance2);
+
+            speed1 = (distance2 - distance1) / (0.5);
+
+            if (speed1 < 0)
+            {
+                speed1 = -speed1;
+            }
+            
+            Serial.print("speed1 is ");
+            Serial.println(speed1);
+            delay(500);
+
+            digitalWrite(trigger, LOW);
+            delayMicroseconds(100);
+            digitalWrite(trigger, HIGH);
+            delayMicroseconds(10);
+            digitalWrite(trigger, LOW);
+            TIME3 = pulseIn(echo, HIGH);
+            distance3 = (speed * TIME3) / 2;
+            Serial.print("Distance3 in cm");
+            Serial.println(distance3);
+
+            speed2 = (distance3 - distance2) / (0.5);
+
+            if (speed2 < 0)
+            {
+                speed2 = -speed2;
+            }
+            
+            Serial.print("speed2 is ");
+            Serial.println(speed2);
+            delay(1000);
+
+            avg = (speed1 + speed2) / 2;
+            Serial.print("avg is ");
+            Serial.println(avg);
+            delay(2000);
+
+            if (speed1 >= 0 && speed2 >= 0)
+            {
+                createCI_Speed(String(avg));
+                mqttPublish_Speed(writeChannelID, writeAPIKey, avg);
+            }
+
+            while (1)
+            {
+                ldrVal = analogRead(ldrPin);
+
+                if (ldrVal > 400)
+                {
+                    break;
+                }
+                
+                digitalWrite(trigger, LOW);
+                delayMicroseconds(100);
+                digitalWrite(trigger, HIGH);
+                delayMicroseconds(10);
+                digitalWrite(trigger, LOW);
+                TIME = pulseIn(echo, HIGH);
+                distance = (speed * TIME) / 2;
+                Serial.print("Distance in cm is: ");
+                delay(100);
+                Serial.println(distance);
+
+                delay(1000);
+
+                if (distance > threshold)
+                {
+                    Serial.println("Turning off lights....");
+                    delay(1000);
+                    lightOff();
+                    break;
+                }
+            }
+        }
+
+        
+    }
+
+    else
+        {
+            lightOff();
+
+            int state = digitalRead(sensor_pin);
+            Serial.print("Motion sensor value is: ");
+            Serial.println(state);
+            delay(500);
+
+            if (state == HIGH)
+            {
+                digitalWrite(trigger, LOW);
+                delayMicroseconds(100);
+                digitalWrite(trigger, HIGH);
+                delayMicroseconds(10);
+                digitalWrite(trigger, LOW);
+                TIME1 = pulseIn(echo, HIGH);
+                distance1 = (speed * TIME1) / 2;
+                Serial.print("Distance in cm");
+                delay(500);
+                Serial.println(distance1);
+
+                digitalWrite(trigger, LOW);
+                delayMicroseconds(100);
+                digitalWrite(trigger, HIGH);
+                delayMicroseconds(10);
+                digitalWrite(trigger, LOW);
+                TIME2 = pulseIn(echo, HIGH);
+                distance2 = (speed * TIME2) / 2;
+                Serial.print("Distance in cm");
+                Serial.println(distance2);
+
+                speed1 = (distance2 - distance1) / (0.5);
+
+
+                if (speed1 < 0)
+                {
+                    speed1 = -speed1;
+                }
+                
+                Serial.print("speed1 is ");
+                Serial.println(speed1);
+                delay(500);
+
+                
+
+                digitalWrite(trigger, LOW);
+                delayMicroseconds(100);
+                digitalWrite(trigger, HIGH);
+                delayMicroseconds(10);
+                digitalWrite(trigger, LOW);
+                TIME3 = pulseIn(echo, HIGH);
+                distance3 = (speed * TIME3) / 2;
+                Serial.print("Distance in cm");
+                Serial.println(distance3);
+
+                speed2 = (distance3 - distance2) / (0.5);
+
+                if (speed2 < 0)
+                {
+                    speed2 = -speed2;
+                }
+                
+                Serial.print("speed2 is ");
+                Serial.println(speed2);
+                delay(500);
+
+                
+
+                avg = (speed1 + speed2) / 2;
+                Serial.print("avg is ");
+                Serial.println(avg);
+                delay(500);
+
+                while (1)
+                {
+                    digitalWrite(trigger, LOW);
+                    delayMicroseconds(100);
+                    digitalWrite(trigger, HIGH);
+                    delayMicroseconds(10);
+                    digitalWrite(trigger, LOW);
+                    TIME = pulseIn(echo, HIGH);
+                    distance = (speed * TIME) / 2;
+                    Serial.print("Distance in cm");
+                    Serial.println(distance);
+
+                    delay(1000);
+
+                    if (distance > threshold)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+}
